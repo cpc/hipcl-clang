@@ -379,8 +379,24 @@ llvm::Type *CodeGenTypes::ConvertFunctionType(QualType QFT,
   return ResultType;
 }
 
+clang::LangAS CodeGenTypes::GetDeterminedAS(QualType QTy,
+                                            QualType QTy_subordinate) {
+  clang::LangAS DAS = QTy_subordinate.getAddressSpace();
+  // Treat private as TBD
+  if (DAS == LangAS::opencl_private)
+    DAS = LangAS::Default;
+  // Try to get an language AS from parent
+  if (DAS == LangAS::Default)
+    DAS = QTy.getAddressSpace();
+  // Again, Treat private as TBD
+  if (DAS == LangAS::opencl_private)
+    DAS = LangAS::Default;
+  return DAS;
+}
+
 /// ConvertType - Convert the specified type to its LLVM form.
 llvm::Type *CodeGenTypes::ConvertType(QualType T) {
+  unsigned ASValue = Context.getTargetAddressSpace(T);
   T = Context.getCanonicalType(T);
 
   const Type *Ty = T.getTypePtr();
@@ -389,11 +405,29 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
   if (const RecordType *RT = dyn_cast<RecordType>(Ty))
     return ConvertRecordDeclType(RT->getDecl());
 
-  // See if type is already cached.
-  llvm::DenseMap<const Type *, llvm::Type *>::iterator TCI = TypeCache.find(Ty);
-  // If type is found in map then use it. Otherwise, convert type T.
-  if (TCI != TypeCache.end())
-    return TCI->second;
+  if (ASValue) {
+    std::pair<const Type *, unsigned> tuple = std::make_pair(Ty, ASValue);
+    if (TypeCacheASQ.count(tuple)) {
+      llvm::Type *ResultType = TypeCacheASQ[tuple];
+      if (Ty->getTypeClass() == Type::Pointer) {
+        unsigned PAS = ResultType->getPointerAddressSpace();
+        unsigned EAS = Context.getTargetAddressSpace(
+            cast<PointerType>(Ty)->getPointeeType());
+        if ((EAS != PAS) && EAS)
+          printf("WARNING ConvertType: cached pointer AS != pointee AS\n");
+      }
+      return ResultType;
+    }
+
+  } else {
+
+    // See if type is already cached.
+    llvm::DenseMap<const Type *, llvm::Type *>::iterator TCI =
+        TypeCache.find(Ty);
+    // If type is found in map then use it. Otherwise, convert type T.
+    if (TCI != TypeCache.end())
+      return TCI->second;
+  }
 
   // If we don't have it in the cache, convert it now.
   llvm::Type *ResultType = nullptr;
@@ -527,14 +561,25 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
   case Type::DeducedTemplateSpecialization:
     llvm_unreachable("Unexpected undeduced type!");
   case Type::Complex: {
-    llvm::Type *EltTy = ConvertType(cast<ComplexType>(Ty)->getElementType());
+    clang::LangAS DAS =
+        GetDeterminedAS(T, cast<ComplexType>(Ty)->getElementType());
+    llvm::Type *EltTy =
+        (DAS != LangAS::Default)
+            ? ConvertType(Context.getAddrSpaceQualType(
+                  cast<ComplexType>(Ty)->getElementType().getUnqualifiedType(),
+                  DAS))
+            : ConvertType(cast<ComplexType>(Ty)->getElementType());
     ResultType = llvm::StructType::get(EltTy, EltTy);
     break;
   }
   case Type::LValueReference:
   case Type::RValueReference: {
     const ReferenceType *RTy = cast<ReferenceType>(Ty);
-    QualType ETy = RTy->getPointeeType();
+    clang::LangAS DAS = GetDeterminedAS(T, RTy->getPointeeType());
+    QualType ETy = (DAS != LangAS::Default)
+                       ? Context.getAddrSpaceQualType(
+                             RTy->getPointeeType().getUnqualifiedType(), DAS)
+                       : RTy->getPointeeType();
     llvm::Type *PointeeType = ConvertTypeForMem(ETy);
     unsigned AS = Context.getTargetAddressSpace(ETy);
     ResultType = llvm::PointerType::get(PointeeType, AS);
@@ -542,7 +587,11 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
   }
   case Type::Pointer: {
     const PointerType *PTy = cast<PointerType>(Ty);
-    QualType ETy = PTy->getPointeeType();
+    clang::LangAS DAS = GetDeterminedAS(T, PTy->getPointeeType());
+    QualType ETy = (DAS != LangAS::Default)
+                       ? Context.getAddrSpaceQualType(
+                             PTy->getPointeeType().getUnqualifiedType(), DAS)
+                       : PTy->getPointeeType();
     llvm::Type *PointeeType = ConvertTypeForMem(ETy);
     if (PointeeType->isVoidTy())
       PointeeType = llvm::Type::getInt8Ty(getLLVMContext());
@@ -557,7 +606,11 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
            "FIXME: We only handle trivial array types so far!");
     // VLAs resolve to the innermost element type; this matches
     // the return of alloca, and there isn't any obviously better choice.
-    ResultType = ConvertTypeForMem(A->getElementType());
+    clang::LangAS DAS = GetDeterminedAS(T, A->getElementType());
+    ResultType = (DAS != LangAS::Default)
+                     ? ConvertTypeForMem(Context.getAddrSpaceQualType(
+                           A->getElementType().getUnqualifiedType(), DAS))
+                     : ConvertTypeForMem(A->getElementType());
     break;
   }
   case Type::IncompleteArray: {
@@ -566,7 +619,11 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
            "FIXME: We only handle trivial array types so far!");
     // int X[] -> [0 x int], unless the element type is not sized.  If it is
     // unsized (e.g. an incomplete struct) just use [0 x i8].
-    ResultType = ConvertTypeForMem(A->getElementType());
+    clang::LangAS DAS = GetDeterminedAS(T, A->getElementType());
+    ResultType = (DAS != LangAS::Default)
+                     ? ConvertTypeForMem(Context.getAddrSpaceQualType(
+                           A->getElementType().getUnqualifiedType(), DAS))
+                     : ConvertTypeForMem(A->getElementType());
     if (!ResultType->isSized()) {
       SkippedLayout = true;
       ResultType = llvm::Type::getInt8Ty(getLLVMContext());
@@ -576,7 +633,12 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
   }
   case Type::ConstantArray: {
     const ConstantArrayType *A = cast<ConstantArrayType>(Ty);
-    llvm::Type *EltTy = ConvertTypeForMem(A->getElementType());
+    clang::LangAS DAS = GetDeterminedAS(T, A->getElementType());
+    llvm::Type *EltTy =
+        (DAS != LangAS::Default)
+            ? ConvertTypeForMem(Context.getAddrSpaceQualType(
+                  A->getElementType().getUnqualifiedType(), DAS))
+            : ConvertTypeForMem(A->getElementType());
 
     // Lower arrays of undefined struct type to arrays of i8 just to have a
     // concrete type.
@@ -591,18 +653,31 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
   case Type::ExtVector:
   case Type::Vector: {
     const VectorType *VT = cast<VectorType>(Ty);
-    ResultType = llvm::VectorType::get(ConvertType(VT->getElementType()),
-                                       VT->getNumElements());
+    clang::LangAS DAS = GetDeterminedAS(T, VT->getElementType());
+    ResultType = (DAS != LangAS::Default)
+                     ? llvm::VectorType::get(
+                           ConvertType(Context.getAddrSpaceQualType(
+                               VT->getElementType().getUnqualifiedType(), DAS)),
+                           VT->getNumElements())
+                     : llvm::VectorType::get(ConvertType(VT->getElementType()),
+                                             VT->getNumElements());
     break;
   }
   case Type::FunctionNoProto:
   case Type::FunctionProto:
     ResultType = ConvertFunctionType(T);
     break;
-  case Type::ObjCObject:
-    ResultType = ConvertType(cast<ObjCObjectType>(Ty)->getBaseType());
+  case Type::ObjCObject: {
+    clang::LangAS DAS =
+        GetDeterminedAS(T, cast<ObjCObjectType>(Ty)->getBaseType());
+    ResultType =
+        (DAS != LangAS::Default)
+            ? ConvertType(Context.getAddrSpaceQualType(
+                  cast<ObjCObjectType>(Ty)->getBaseType().getUnqualifiedType(),
+                  DAS))
+            : ConvertType(cast<ObjCObjectType>(Ty)->getBaseType());
     break;
-
+  }
   case Type::ObjCInterface: {
     // Objective-C interfaces are always opaque (outside of the
     // runtime, which can do whatever it likes); we never refine
@@ -618,16 +693,30 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
     // Protocol qualifications do not influence the LLVM type, we just return a
     // pointer to the underlying interface type. We don't need to worry about
     // recursive conversion.
+    clang::LangAS DAS =
+        GetDeterminedAS(T, cast<ObjCObjectPointerType>(Ty)->getPointeeType());
     llvm::Type *T =
-      ConvertTypeForMem(cast<ObjCObjectPointerType>(Ty)->getPointeeType());
+        (DAS != LangAS::Default)
+            ? ConvertTypeForMem(
+                  Context.getAddrSpaceQualType(cast<ObjCObjectPointerType>(Ty)
+                                                   ->getPointeeType()
+                                                   .getUnqualifiedType(),
+                                               DAS))
+            : ConvertTypeForMem(
+                  cast<ObjCObjectPointerType>(Ty)->getPointeeType());
     ResultType = T->getPointerTo();
     break;
   }
 
   case Type::Enum: {
     const EnumDecl *ED = cast<EnumType>(Ty)->getDecl();
-    if (ED->isCompleteDefinition() || ED->isFixed())
-      return ConvertType(ED->getIntegerType());
+    if (ED->isCompleteDefinition() || ED->isFixed()) {
+      clang::LangAS DAS = GetDeterminedAS(T, ED->getIntegerType());
+      return (DAS != LangAS::Default)
+                 ? ConvertType(Context.getAddrSpaceQualType(
+                       ED->getIntegerType().getUnqualifiedType(), DAS))
+                 : ConvertType(ED->getIntegerType());
+    }
     // Return a placeholder 'i32' type.  This can be changed later when the
     // type is defined (see UpdateCompletedType), but is likely to be the
     // "right" answer.
@@ -636,7 +725,15 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
   }
 
   case Type::BlockPointer: {
-    const QualType FTy = cast<BlockPointerType>(Ty)->getPointeeType();
+    clang::LangAS DAS =
+        GetDeterminedAS(T, cast<BlockPointerType>(Ty)->getPointeeType());
+    const QualType FTy =
+        (DAS != LangAS::Default)
+            ? Context.getAddrSpaceQualType(cast<BlockPointerType>(Ty)
+                                               ->getPointeeType()
+                                               .getUnqualifiedType(),
+                                           DAS)
+            : cast<BlockPointerType>(Ty)->getPointeeType();
     llvm::Type *PointeeType = ConvertTypeForMem(FTy);
     unsigned AS = Context.getTargetAddressSpace(FTy);
     ResultType = llvm::PointerType::get(PointeeType, AS);
@@ -656,8 +753,11 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
 
   case Type::Atomic: {
     QualType valueType = cast<AtomicType>(Ty)->getValueType();
-    ResultType = ConvertTypeForMem(valueType);
-
+    clang::LangAS DAS = GetDeterminedAS(T, valueType);
+    ResultType = (DAS != LangAS::Default)
+                     ? ConvertTypeForMem(Context.getAddrSpaceQualType(
+                           valueType.getUnqualifiedType(), DAS))
+                     : ConvertTypeForMem(valueType);
     // Pad out to the inflated size if necessary.
     uint64_t valueSize = Context.getTypeSize(valueType);
     uint64_t atomicSize = Context.getTypeSize(Ty);
@@ -680,7 +780,11 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
 
   assert(ResultType && "Didn't convert a type?");
 
-  TypeCache[Ty] = ResultType;
+  if (ASValue)
+    TypeCacheASQ[std::make_pair(Ty, ASValue)] = ResultType;
+  else
+    TypeCache[Ty] = ResultType;
+
   return ResultType;
 }
 

@@ -444,6 +444,28 @@ CodeGenTypes::arrangeFunctionDeclaration(const FunctionDecl *FD) {
   assert(isa<FunctionType>(FTy));
   setCUDAKernelCallingConvention(FTy, CGM, FD);
 
+  if ((getContext().getTargetInfo().getTriple().getArch() ==
+       llvm::Triple::spir64) &&
+      CGM.getLangOpts().CUDAIsDevice && FD->hasAttr<CUDAGlobalAttr>()) {
+    SmallVector<CanQualType, 16> argCanQualTypes;
+    for (ParmVarDecl *Arg : FD->parameters()) {
+      if (Arg->getType().getTypePtr()->isPointerType()) {
+        Arg->setType(getContext().getAddrSpaceQualType(Arg->getType(),
+                                                       LangAS::cuda_device));
+        argCanQualTypes.push_back(
+            CanQualType::CreateUnsafe(getContext().getAddrSpaceQualType(
+                getContext().getCanonicalParamType(Arg->getType()),
+                LangAS::cuda_device)));
+      } else {
+        argCanQualTypes.push_back(
+            getContext().getCanonicalParamType(Arg->getType()));
+      }
+    }
+    CallingConv CC = CC_OpenCLKernel; // Will be converted to AMDGPU_KERNEL
+    return arrangeLLVMFunctionInfo(getContext().VoidTy, false, false,
+                                   argCanQualTypes, FunctionType::ExtInfo(CC),
+                                   {}, RequiredArgs::All);
+  }
   // When declaring a function without a prototype, always use a
   // non-variadic type.
   if (CanQual<FunctionNoProtoType> noProto = FTy.getAs<FunctionNoProtoType>()) {
@@ -747,8 +769,13 @@ CodeGenTypes::arrangeLLVMFunctionInfo(CanQualType resultType,
                                       FunctionType::ExtInfo info,
                      ArrayRef<FunctionProtoType::ExtParameterInfo> paramInfos,
                                       RequiredArgs required) {
-  assert(llvm::all_of(argTypes,
-                      [](CanQualType T) { return T.isCanonicalAsParam(); }));
+  // All args should be cannonical except for address space qual
+  assert(std::all_of(argTypes.begin(), argTypes.end(), [&](CanQualType QT) {
+    Qualifiers qs = QT.getQualifiers();
+    qs.removeAddressSpace();
+    return (
+        QualType(QT.getTypePtr(), qs.getAsOpaqueValue()).isCanonicalAsParam());
+  }));
 
   // Lookup or create unique function info.
   llvm::FoldingSetNodeID ID;

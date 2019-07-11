@@ -38,7 +38,6 @@
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/Transforms/Utils/PromoteMemToReg.h"
-
 using namespace clang;
 using namespace CodeGen;
 
@@ -1273,7 +1272,15 @@ QualType CodeGenFunction::BuildFunctionArgList(GlobalDecl GD,
           getTypes().inheritingCtorHasParams(Inherited, GD.getCtorType());
 
   if (PassedParams) {
+    bool is_spir_global =
+        ((CGM.getTriple().getArch() == llvm::Triple::spir64) &&
+         getLangOpts().CUDAIsDevice && FD->hasAttr<CUDAGlobalAttr>());
+
     for (auto *Param : FD->parameters()) {
+      // for amdgcn kernel functions, mark nonscalars in cuda_device memory
+      if (is_spir_global && Param->getType()->isPointerType())
+        Param->setType(getContext().getAddrSpaceQualType(Param->getType(),
+                                                         LangAS::cuda_device));
       Args.push_back(Param);
       if (!Param->hasAttr<PassObjectSizeAttr>())
         continue;
