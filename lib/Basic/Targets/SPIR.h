@@ -29,9 +29,9 @@ static const unsigned SPIRAddrSpaceMap[] = {
     2, // opencl_constant
     0, // opencl_private
     4, // opencl_generic
-    0, // cuda_device
-    0, // cuda_constant
-    0  // cuda_shared
+    1, // cuda_device
+    2, // cuda_constant
+    3  // cuda_shared
 };
 
 class LLVM_LIBRARY_VISIBILITY SPIRTargetInfo : public TargetInfo {
@@ -98,7 +98,62 @@ public:
     // for SPIR since it is a generic target.
     getSupportedOpenCLOpts().supportAll();
   }
+
+  LangAS getOpenCLTypeAddrSpace(OpenCLTypeKind TK) const override {
+    switch (TK) {
+    case OCLTK_Image:
+      return LangAS::opencl_constant;
+
+    case OCLTK_ClkEvent:
+    case OCLTK_Queue:
+    case OCLTK_ReserveID:
+      return LangAS::opencl_global;
+
+    default:
+      return TargetInfo::getOpenCLTypeAddrSpace(TK);
+    }
+  }
+
+  LangAS getOpenCLBuiltinAddressSpace(unsigned AS) const override {
+    switch (AS) {
+    case 0:
+      return LangAS::opencl_private;
+    case 1:
+      return LangAS::opencl_global;
+    case 2:
+      return LangAS::opencl_constant;
+    case 3:
+      return LangAS::opencl_local;
+    case 4:
+      return LangAS::opencl_generic;
+    default:
+      return getLangASFromTargetAS(AS);
+    }
+  }
+
+  LangAS getCUDABuiltinAddressSpace(unsigned AS) const override {
+    switch (AS) {
+    case 0:
+      return LangAS::opencl_private;
+    case 1:
+      return LangAS::opencl_global;
+    case 2:
+      return LangAS::opencl_constant;
+    case 3:
+      return LangAS::opencl_local;
+    default:
+      return getLangASFromTargetAS(AS);
+    }
+
+  }
+
+  llvm::Optional<LangAS> getConstantAddressSpace() const override {
+    return getLangASFromTargetAS(2);
+  }
+
 };
+
+
 class LLVM_LIBRARY_VISIBILITY SPIR32TargetInfo : public SPIRTargetInfo {
 public:
   SPIR32TargetInfo(const llvm::Triple &Triple, const TargetOptions &Opts)

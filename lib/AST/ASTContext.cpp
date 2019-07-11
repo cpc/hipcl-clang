@@ -10380,7 +10380,7 @@ LangAS ASTContext::getLangASForBuiltinAddressSpace(unsigned AS) const {
   if (LangOpts.OpenCL)
     return getTargetInfo().getOpenCLBuiltinAddressSpace(AS);
 
-  if (LangOpts.CUDA)
+  if (LangOpts.CUDA || LangOpts.HIP)
     return getTargetInfo().getCUDABuiltinAddressSpace(AS);
 
   return getLangASFromTargetAS(AS);
