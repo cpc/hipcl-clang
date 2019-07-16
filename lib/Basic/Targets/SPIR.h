@@ -23,7 +23,7 @@ namespace clang {
 namespace targets {
 
 static const unsigned SPIRAddrSpaceMap[] = {
-    0, // Default
+    4, // Default
     1, // opencl_global
     3, // opencl_local
     2, // opencl_constant
