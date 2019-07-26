@@ -55,10 +55,9 @@ private:
 
   /// \return llc output file name.
   const char *constructLlcCommand(Compilation &C, const JobAction &JA,
+                                  const InputInfo &Output,
                                   const InputInfoList &Inputs,
                                   const llvm::opt::ArgList &Args,
-                                  llvm::StringRef SubArchName,
-                                  llvm::StringRef OutputFilePrefix,
                                   const char *InputFileName) const;
 
   void constructLldCommand(Compilation &C, const JobAction &JA,

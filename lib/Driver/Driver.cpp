@@ -615,7 +615,7 @@ void Driver::CreateOffloadingDeviceToolChains(Compilation &C,
     const llvm::Triple &HostTriple = HostTC->getTriple();
     StringRef DeviceTripleStr;
     auto OFK = Action::OFK_HIP;
-    DeviceTripleStr = "amdgcn-amd-amdhsa";
+    DeviceTripleStr = "spir64-unknown-unknown";
     llvm::Triple HIPTriple(DeviceTripleStr);
     // Use the HIP and host triples as the key into the ToolChains map,
     // because the device toolchain we create depends on both.

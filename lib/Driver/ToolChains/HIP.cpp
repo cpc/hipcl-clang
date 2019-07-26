@@ -55,6 +55,8 @@ const char *AMDGCN::Linker::constructLLVMLinkCommand(
     const ArgList &Args, StringRef SubArchName,
     StringRef OutputFilePrefix) const {
   ArgStringList CmdArgs;
+  CmdArgs.push_back("-only-needed");
+
   // Add the input bc's created by compile step.
   for (const auto &II : Inputs)
     CmdArgs.push_back(II.getFilename());
@@ -74,26 +76,6 @@ const char *AMDGCN::Linker::constructLLVMLinkCommand(
     BCLibs.push_back(Args.MakeArgString(Lib));
   }
 
-  // If --hip-device-lib is not set, add the default bitcode libraries.
-  if (BCLibs.empty()) {
-    // Get the bc lib file name for ISA version. For example,
-    // gfx803 => oclc_isa_version_803.amdgcn.bc.
-    std::string ISAVerBC =
-        "oclc_isa_version_" + SubArchName.drop_front(3).str() + ".amdgcn.bc";
-
-    llvm::StringRef FlushDenormalControlBC;
-    if (Args.hasArg(options::OPT_fcuda_flush_denormals_to_zero))
-      FlushDenormalControlBC = "oclc_daz_opt_on.amdgcn.bc";
-    else
-      FlushDenormalControlBC = "oclc_daz_opt_off.amdgcn.bc";
-
-    BCLibs.append({"hip.amdgcn.bc", "opencl.amdgcn.bc",
-                   "ocml.amdgcn.bc", "ockl.amdgcn.bc",
-                   "oclc_finite_only_off.amdgcn.bc",
-                   FlushDenormalControlBC,
-                   "oclc_correctly_rounded_sqrt_on.amdgcn.bc",
-                   "oclc_unsafe_math_off.amdgcn.bc", ISAVerBC});
-  }
   for (auto Lib : BCLibs)
     addBCLib(C, Args, CmdArgs, LibraryPaths, Lib);
 
@@ -112,9 +94,12 @@ const char *AMDGCN::Linker::constructLLVMLinkCommand(
 }
 
 const char *AMDGCN::Linker::constructOptCommand(
-    Compilation &C, const JobAction &JA, const InputInfoList &Inputs,
-    const llvm::opt::ArgList &Args, llvm::StringRef SubArchName,
-    llvm::StringRef OutputFilePrefix, const char *InputFileName) const {
+                                   Compilation &C, const JobAction &JA,
+                                   const InputInfoList &Inputs,
+                                   const ArgList &Args,
+                                   llvm::StringRef SubArchName,
+                                   llvm::StringRef OutputFilePrefix,
+                                   const char *InputFileName) const {
   // Construct opt command.
   ArgStringList OptArgs;
   // The input to opt is the output from llvm-link.
@@ -139,14 +124,14 @@ const char *AMDGCN::Linker::constructOptCommand(
     }
     OptArgs.push_back(Args.MakeArgString("-O" + OOpt));
   }
-  OptArgs.push_back("-mtriple=amdgcn-amd-amdhsa");
-  OptArgs.push_back(Args.MakeArgString("-mcpu=" + SubArchName));
+  OptArgs.push_back("-mtriple=spir64-unknown-unknown");
   OptArgs.push_back("-o");
   std::string TmpFileName = C.getDriver().GetTemporaryPath(
       OutputFilePrefix.str() + "-optimized", "bc");
   const char *OutputFileName =
       C.addTempFile(C.getArgs().MakeArgString(TmpFileName));
   OptArgs.push_back(OutputFileName);
+
   SmallString<128> OptPath(C.getDriver().Dir);
   llvm::sys::path::append(OptPath, "opt");
   const char *OptExec = Args.MakeArgString(OptPath);
@@ -155,23 +140,21 @@ const char *AMDGCN::Linker::constructOptCommand(
 }
 
 const char *AMDGCN::Linker::constructLlcCommand(
-    Compilation &C, const JobAction &JA, const InputInfoList &Inputs,
-    const llvm::opt::ArgList &Args, llvm::StringRef SubArchName,
-    llvm::StringRef OutputFilePrefix, const char *InputFileName) const {
+    Compilation &C, const JobAction &JA,
+    const InputInfo &Output,
+    const InputInfoList &Inputs,
+    const llvm::opt::ArgList &Args,
+    const char *InputFileName) const {
   // Construct llc command.
-  ArgStringList LlcArgs{InputFileName, "-mtriple=amdgcn-amd-amdhsa",
-                        "-filetype=obj", "-mattr=-code-object-v3",
-                        Args.MakeArgString("-mcpu=" + SubArchName), "-o"};
-  std::string LlcOutputFileName =
-      C.getDriver().GetTemporaryPath(OutputFilePrefix, "o");
-  const char *LlcOutputFile =
-      C.addTempFile(C.getArgs().MakeArgString(LlcOutputFileName));
-  LlcArgs.push_back(LlcOutputFile);
-  SmallString<128> LlcPath(C.getDriver().Dir);
-  llvm::sys::path::append(LlcPath, "llc");
-  const char *Llc = Args.MakeArgString(LlcPath);
+  ArgStringList LlcArgs{InputFileName,
+                        "-o",
+                        Output.getFilename() };
+
+  SmallString<128> LlvmSpirvPath(C.getDriver().Dir);
+  llvm::sys::path::append(LlvmSpirvPath, "llvm-spirv");
+  const char *Llc = Args.MakeArgString(LlvmSpirvPath);
   C.addCommand(llvm::make_unique<Command>(JA, *this, Llc, LlcArgs, Inputs));
-  return LlcOutputFile;
+  return nullptr;
 }
 
 void AMDGCN::Linker::constructLldCommand(Compilation &C, const JobAction &JA,
@@ -207,8 +190,7 @@ void AMDGCN::constructHIPFatbinCommand(Compilation &C, const JobAction &JA,
 
   for (const auto &II : Inputs) {
     const auto* A = II.getAction();
-    BundlerTargetArg = BundlerTargetArg + ",hip-amdgcn-amd-amdhsa-" +
-                       StringRef(A->getOffloadingArch()).str();
+    BundlerTargetArg = BundlerTargetArg + ",hip-spir64-unknown-unknown-generic";
     BundlerInputArg = BundlerInputArg + "," + II.getFilename();
   }
   BundlerArgs.push_back(Args.MakeArgString(BundlerTargetArg));
@@ -235,11 +217,10 @@ void AMDGCN::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   if (JA.getType() == types::TY_HIP_FATBIN)
     return constructHIPFatbinCommand(C, JA, Output.getFilename(), Inputs, Args, *this);
 
-  assert(getToolChain().getTriple().getArch() == llvm::Triple::amdgcn &&
+  assert(getToolChain().getTriple().getArch() == llvm::Triple::spir64 &&
          "Unsupported target");
 
-  std::string SubArchName = JA.getOffloadingArch();
-  assert(StringRef(SubArchName).startswith("gfx") && "Unsupported sub arch");
+  std::string SubArchName = "generic";
 
   // Prefix for temporary file name.
   std::string Prefix =
@@ -248,11 +229,11 @@ void AMDGCN::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   // Each command outputs different files.
   const char *LLVMLinkCommand =
       constructLLVMLinkCommand(C, JA, Inputs, Args, SubArchName, Prefix);
-  const char *OptCommand = constructOptCommand(C, JA, Inputs, Args, SubArchName,
-                                               Prefix, LLVMLinkCommand);
-  const char *LlcCommand =
-      constructLlcCommand(C, JA, Inputs, Args, SubArchName, Prefix, OptCommand);
-  constructLldCommand(C, JA, Inputs, Output, Args, LlcCommand);
+
+  const char *OptCommand =
+      constructOptCommand(C, JA, Inputs, Args, StringRef(), StringRef(), LLVMLinkCommand);
+
+  constructLlcCommand(C, JA, Output, Inputs, Args, OptCommand);
 }
 
 HIPToolChain::HIPToolChain(const Driver &D, const llvm::Triple &Triple,
@@ -267,16 +248,9 @@ void HIPToolChain::addClangTargetOptions(
     const llvm::opt::ArgList &DriverArgs,
     llvm::opt::ArgStringList &CC1Args,
     Action::OffloadKind DeviceOffloadingKind) const {
+
   HostTC.addClangTargetOptions(DriverArgs, CC1Args, DeviceOffloadingKind);
 
-  StringRef GpuArch = DriverArgs.getLastArgValue(options::OPT_march_EQ);
-  assert(!GpuArch.empty() && "Must have an explicit GPU arch.");
-  (void) GpuArch;
-  assert(DeviceOffloadingKind == Action::OFK_HIP &&
-         "Only HIP offloading kinds are supported for GPUs.");
-
-  CC1Args.push_back("-target-cpu");
-  CC1Args.push_back(DriverArgs.MakeArgStringRef(GpuArch));
   CC1Args.push_back("-fcuda-is-device");
 
   if (DriverArgs.hasFlag(options::OPT_fcuda_flush_denormals_to_zero,
@@ -352,7 +326,7 @@ HIPToolChain::TranslateArgs(const llvm::opt::DerivedArgList &Args,
 }
 
 Tool *HIPToolChain::buildLinker() const {
-  assert(getTriple().getArch() == llvm::Triple::amdgcn);
+  assert(getTriple().getArch() == llvm::Triple::spir64);
   return new tools::AMDGCN::Linker(*this);
 }
 

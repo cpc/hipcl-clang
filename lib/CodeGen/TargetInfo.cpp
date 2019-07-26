@@ -8700,7 +8700,6 @@ void XCoreTargetCodeGenInfo::emitTargetMD(const Decl *D, llvm::GlobalValue *GV,
 //===----------------------------------------------------------------------===//
 
 namespace {
-
 class SPIRTargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   SPIRTargetCodeGenInfo(CodeGen::CodeGenTypes &CGT)
