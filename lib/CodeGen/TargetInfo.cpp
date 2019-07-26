@@ -8706,6 +8706,8 @@ public:
     : TargetCodeGenInfo(new DefaultABIInfo(CGT)) {}
   unsigned getOpenCLKernelCallingConv() const override;
   void setCUDAKernelCallingConvention(const FunctionType *&FT) const override;
+  void setTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
+                           CodeGen::CodeGenModule &M) const override;
 };
 
 } // End anonymous namespace.
@@ -8727,6 +8729,22 @@ void SPIRTargetCodeGenInfo::setCUDAKernelCallingConvention(
     const FunctionType *&FT) const {
   FT = getABIInfo().getContext().adjustFunctionType(
       FT, FT->getExtInfo().withCallingConv(CC_OpenCLKernel));
+}
+
+void SPIRTargetCodeGenInfo::setTargetAttributes(
+    const Decl *D, llvm::GlobalValue *GV, CodeGen::CodeGenModule &M) const {
+  if (GV->isDeclaration())
+    return;
+  const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(D);
+  if (!FD) return;
+
+  llvm::Function *F = cast<llvm::Function>(GV);
+
+  if (FD->hasAttr<CUDAGlobalAttr>() || FD->hasAttr<OpenCLKernelAttr>()) {
+      // kernel functions are not subject to inlining
+      F->addFnAttr(llvm::Attribute::NoInline);
+  }
+
 }
 
 
