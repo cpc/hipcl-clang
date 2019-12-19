@@ -231,7 +231,7 @@ void AMDGCN::Linker::ConstructJob(Compilation &C, const JobAction &JA,
       constructLLVMLinkCommand(C, JA, Inputs, Args, SubArchName, Prefix);
 
   const char *OptCommand =
-      constructOptCommand(C, JA, Inputs, Args, StringRef(), StringRef(), LLVMLinkCommand);
+      constructOptCommand(C, JA, Inputs, Args, SubArchName, Prefix, LLVMLinkCommand);
 
   constructLlcCommand(C, JA, Output, Inputs, Args, OptCommand);
 }
