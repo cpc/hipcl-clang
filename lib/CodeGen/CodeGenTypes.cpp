@@ -413,8 +413,6 @@ llvm::Type *CodeGenTypes::ConvertType(QualType T) {
         unsigned PAS = ResultType->getPointerAddressSpace();
         unsigned EAS = Context.getTargetAddressSpace(
             cast<PointerType>(Ty)->getPointeeType());
-        if ((EAS != PAS) && EAS)
-          printf("WARNING ConvertType: cached pointer AS != pointee AS\n");
       }
       return ResultType;
     }
