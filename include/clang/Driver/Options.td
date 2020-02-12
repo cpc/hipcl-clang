@@ -592,6 +592,8 @@ def hip_device_lib_path_EQ : Joined<["--"], "hip-device-lib-path=">, Group<Link_
   HelpText<"HIP device library path">;
 def hip_device_lib_EQ : Joined<["--"], "hip-device-lib=">, Group<Link_Group>,
   HelpText<"HIP device library">;
+def hip_llvm_pass_path_EQ : Joined<["--"], "hip-llvm-pass-path=">, Group<Link_Group>,
+  HelpText<"path to HIP LLVM passes">;
 def fhip_dump_offload_linker_script : Flag<["-"], "fhip-dump-offload-linker-script">,
   Group<f_Group>, Flags<[NoArgumentUnused, HelpHidden]>;
 def libomptarget_nvptx_path_EQ : Joined<["--"], "libomptarget-nvptx-path=">, Group<i_Group>,

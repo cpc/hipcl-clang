@@ -132,6 +132,14 @@ const char *AMDGCN::Linker::constructOptCommand(
       C.addTempFile(C.getArgs().MakeArgString(TmpFileName));
   OptArgs.push_back(OutputFileName);
 
+  std::vector<std::string> Paths = Args.getAllArgValues(options::OPT_hip_llvm_pass_path_EQ);
+  assert(Paths.size() == 1);
+  Twine HipLLVMPassPath(Paths[0]);
+  Twine HipLLVMPassLib = HipLLVMPassPath.concat(Twine("/libLLVMHipDynMem.so"));
+  OptArgs.push_back("-load");
+  OptArgs.push_back(Args.MakeArgString(HipLLVMPassLib));
+  OptArgs.push_back("-hip-dyn-mem");
+
   SmallString<128> OptPath(C.getDriver().Dir);
   llvm::sys::path::append(OptPath, "opt");
   const char *OptExec = Args.MakeArgString(OptPath);
