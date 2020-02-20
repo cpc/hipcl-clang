@@ -133,12 +133,13 @@ const char *AMDGCN::Linker::constructOptCommand(
   OptArgs.push_back(OutputFileName);
 
   std::vector<std::string> Paths = Args.getAllArgValues(options::OPT_hip_llvm_pass_path_EQ);
-  assert(Paths.size() == 1);
+  if (Paths.size() == 1) {
   Twine HipLLVMPassPath(Paths[0]);
   Twine HipLLVMPassLib = HipLLVMPassPath.concat(Twine("/libLLVMHipDynMem.so"));
   OptArgs.push_back("-load");
   OptArgs.push_back(Args.MakeArgString(HipLLVMPassLib));
   OptArgs.push_back("-hip-dyn-mem");
+  }
 
   SmallString<128> OptPath(C.getDriver().Dir);
   llvm::sys::path::append(OptPath, "opt");
@@ -257,7 +258,25 @@ void HIPToolChain::addClangTargetOptions(
     llvm::opt::ArgStringList &CC1Args,
     Action::OffloadKind DeviceOffloadingKind) const {
 
+  bool err = false;
   HostTC.addClangTargetOptions(DriverArgs, CC1Args, DeviceOffloadingKind);
+
+  if(!DriverArgs.hasArg(options::OPT_hip_llvm_pass_path_EQ)) {
+    getDriver().Diag(diag::err_hip_llvm_pass_missing);
+    err = true;
+  }
+
+  if(!DriverArgs.hasArg(options::OPT_hip_device_lib_path_EQ)) {
+    getDriver().Diag(diag::err_hip_device_lib_path_missing);
+    err = true;
+  }
+
+  if(!DriverArgs.hasArg(options::OPT_hip_device_lib_EQ)) {
+    getDriver().Diag(diag::err_hip_device_lib_missing);
+    err = true;
+  }
+
+  if (err) return;
 
   CC1Args.push_back("-fcuda-is-device");
 

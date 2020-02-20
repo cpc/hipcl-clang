@@ -42,6 +42,9 @@ def err_drv_cuda_version_unsupported : Error<
   "--no-cuda-version-check.">;
 def err_drv_cuda_host_arch : Error<"unsupported architecture '%0' for host compilation.">;
 def err_drv_mix_cuda_hip : Error<"Mixed Cuda and HIP compilation is not supported.">;
+def err_hip_device_lib_path_missing : Error<"-hip-device-lib-path option is missing">;
+def err_hip_device_lib_missing : Error<"-hip-device-lib option is missing">;
+def err_hip_llvm_pass_missing : Error<"-hip-llvm-pass-path option is missing">;
 def err_drv_invalid_thread_model_for_target : Error<
   "invalid thread model '%0' in '%1' for this target">;
 def err_drv_invalid_linker_name : Error<
