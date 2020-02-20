@@ -2485,6 +2485,9 @@ void CodeGenFunction::EmitFunctionProlog(const CGFunctionInfo &FI,
         // type in the function type. Since we are codegening the callee
         // in here, add a cast to the argument type.
         llvm::Type *LTy = ConvertType(Arg->getType());
+        if ((V->getType() != LTy) && (V->getType()->getPointerAddressSpace() !=
+                                      LTy->getPointerAddressSpace()))
+          V = Builder.CreateAddrSpaceCast(V, LTy);
         if (V->getType() != LTy)
           V = Builder.CreateBitCast(V, LTy);
 
@@ -3900,7 +3903,12 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
       }
     }
     if (IRFunctionArgs.hasSRetArg()) {
-      IRCallArgs[IRFunctionArgs.getSRetArgNo()] = SRetPtr.getPointer();
+
+      llvm::Value *V = SRetPtr.getPointer();
+      unsigned ANo = IRFunctionArgs.getSRetArgNo();
+      V = Builder.CreatePointerBitCastOrAddrSpaceCast(V, IRFuncTy->getParamType(ANo));
+      IRCallArgs[ANo] = V;
+
     } else if (RetAI.isInAlloca()) {
       Address Addr = createInAllocaStructGEP(RetAI.getInAllocaFieldIndex());
       Builder.CreateStore(SRetPtr.getPointer(), Addr);
@@ -4081,21 +4089,14 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
 
         // If the argument doesn't match, perform a bitcast to coerce it.  This
         // can happen due to trivial type mismatches.
-        bool ASCastNeeded = false;
         if (FirstIRArg < IRFuncTy->getNumParams() &&
           V->getType() != IRFuncTy->getParamType(FirstIRArg)) {
 
-            if (V->getType()->isPointerTy() && IRFuncTy->getParamType(FirstIRArg)->isPointerTy()) {
-              unsigned AS_src = V->getType()->getPointerAddressSpace();
-              unsigned AS_dst = IRFuncTy->getParamType(FirstIRArg)->getPointerAddressSpace();
-              ASCastNeeded = (AS_src != AS_dst);
-            }
-
-            if (ASCastNeeded) {
-              V = Builder.CreatePointerBitCastOrAddrSpaceCast(V, IRFuncTy->getParamType(FirstIRArg));
-            } else {
-              V = Builder.CreateBitCast(V, IRFuncTy->getParamType(FirstIRArg));
-            }
+          if (V->getType()->isPtrOrPtrVectorTy())
+            V = Builder.CreatePointerBitCastOrAddrSpaceCast(
+                V, IRFuncTy->getParamType(FirstIRArg));
+          else
+            V = Builder.CreateBitCast(V, IRFuncTy->getParamType(FirstIRArg));
 
           }
 
@@ -4539,8 +4540,17 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
           // If the argument doesn't match, perform a bitcast to coerce it.  This
           // can happen due to trivial type mismatches.
           llvm::Value *V = CI;
-          if (V->getType() != RetIRTy)
-            V = Builder.CreateBitCast(V, RetIRTy);
+
+          if (V->getType() != RetIRTy) {
+
+            if (V->getType()->isPtrOrPtrVectorTy()) {
+              V = Builder.CreatePointerBitCastOrAddrSpaceCast(V, RetIRTy);
+            } else {
+              V = Builder.CreateBitCast(V, RetIRTy);
+            }
+
+          }
+
           return RValue::get(V);
         }
         }
