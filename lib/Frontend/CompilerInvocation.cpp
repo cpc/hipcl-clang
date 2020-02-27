@@ -2834,7 +2834,8 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   // Set the flag to prevent the implementation from emitting device exception
   // handling code for those requiring so.
   Opts.OpenMPHostCXXExceptions = Opts.Exceptions && Opts.CXXExceptions;
-  if ((Opts.OpenMPIsDevice && T.isNVPTX()) || Opts.OpenCLCPlusPlus) {
+  if ((Opts.OpenMPIsDevice && T.isNVPTX()) || Opts.OpenCLCPlusPlus ||
+      (Opts.HIP && T.isSPIR())) {
     Opts.Exceptions = 0;
     Opts.CXXExceptions = 0;
   }
