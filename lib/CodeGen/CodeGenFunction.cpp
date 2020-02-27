@@ -550,6 +550,9 @@ static void removeImageAccessQualifier(std::string& TyName) {
 // (basically all single AS CPUs).
 static unsigned ArgInfoAddressSpace(LangAS AS) {
   switch (AS) {
+  case LangAS::cuda_device:   return 1;
+  case LangAS::cuda_shared:   return 3;
+  case LangAS::cuda_constant: return 2;
   case LangAS::opencl_global:   return 1;
   case LangAS::opencl_constant: return 2;
   case LangAS::opencl_local:    return 3;
@@ -598,8 +601,13 @@ static void GenOpenCLArgMetadata(const FunctionDecl *FD, llvm::Function *Fn,
       QualType pointeeTy = ty->getPointeeType();
 
       // Get address qualifier.
-      addressQuals.push_back(llvm::ConstantAsMetadata::get(Builder.getInt32(
-        ArgInfoAddressSpace(pointeeTy.getAddressSpace()))));
+      // For HIP, force AS of pointer arguments to 1 (global)
+      if (ASTCtx.getLangOpts().HIP
+          && ASTCtx.getTargetInfo().getTriple().isSPIR())
+        addressQuals.push_back(llvm::ConstantAsMetadata::get(Builder.getInt32(1)));
+      else
+        addressQuals.push_back(llvm::ConstantAsMetadata::get(Builder.getInt32(
+          ArgInfoAddressSpace(pointeeTy.getAddressSpace()))));
 
       // Get argument type name.
       std::string typeName =
