@@ -2835,7 +2835,8 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   // handling code for those requiring so.
   Opts.OpenMPHostCXXExceptions = Opts.Exceptions && Opts.CXXExceptions;
   if ((Opts.OpenMPIsDevice && T.isNVPTX()) || Opts.OpenCLCPlusPlus ||
-      (Opts.HIP && T.isSPIR())) {
+      (Opts.HIP && ((T.getArch() == llvm::Triple::spir) ||
+                    (T.getArch() == llvm::Triple::spir64)))) {
     Opts.Exceptions = 0;
     Opts.CXXExceptions = 0;
   }

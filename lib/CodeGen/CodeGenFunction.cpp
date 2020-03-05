@@ -602,8 +602,10 @@ static void GenOpenCLArgMetadata(const FunctionDecl *FD, llvm::Function *Fn,
 
       // Get address qualifier.
       // For HIP, force AS of pointer arguments to 1 (global)
-      if (ASTCtx.getLangOpts().HIP
-          && ASTCtx.getTargetInfo().getTriple().isSPIR())
+      llvm::Triple::ArchType Arch =
+          ASTCtx.getTargetInfo().getTriple().getArch();
+      if (ASTCtx.getLangOpts().HIP &&
+          ((Arch == llvm::Triple::spir) || (Arch == llvm::Triple::spir64)))
         addressQuals.push_back(llvm::ConstantAsMetadata::get(Builder.getInt32(1)));
       else
         addressQuals.push_back(llvm::ConstantAsMetadata::get(Builder.getInt32(

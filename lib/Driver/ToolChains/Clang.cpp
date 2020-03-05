@@ -3293,7 +3293,8 @@ static void RenderDebugOptions(const ToolChain &TC, const Driver &D,
 
   // temporary: turn off debugging for HIPCL device compilation
   // TODO somehow limit to HIP toolchain
-  if (T.isSPIR())
+  if ((T.getArch() == llvm::Triple::spir) ||
+      (T.getArch() == llvm::Triple::spir64))
     DebugInfoKind = codegenoptions::NoDebugInfo;
 
   // Adjust the debug info kind for the given toolchain.

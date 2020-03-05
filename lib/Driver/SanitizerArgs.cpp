@@ -805,7 +805,9 @@ void SanitizerArgs::addArgs(const ToolChain &TC, const llvm::opt::ArgList &Args,
   // e.g. -fsanitize=address applies only to host code, which is what we want
   // for now.
   // same for HIPCL + SPIR
-  if (TC.getTriple().isNVPTX() || TC.getTriple().isSPIR())
+  llvm::Triple::ArchType Arch = TC.getTriple().getArch();
+  if (TC.getTriple().isNVPTX() || (Arch == llvm::Triple::spir) ||
+      (Arch == llvm::Triple::spir64))
     return;
 
   // Translate available CoverageFeatures to corresponding clang-cc1 flags.

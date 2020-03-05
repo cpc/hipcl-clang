@@ -202,7 +202,8 @@ void CGNVCUDARuntime::emitDeviceStubBody(CodeGenFunction &CGF,
     auto *Arg = CGF.GetAddrOfLocalVar(A).getPointer();
     CharUnits TyWidth, TyAlign;
     auto *Aux = CGM.getContext().getAuxTargetInfo();
-    if (Aux && Aux->getTriple().isSPIR()) {
+    if (Aux && ((Aux->getTriple().getArch() == llvm::Triple::spir) ||
+                (Aux->getTriple().getArch() == llvm::Triple::spir64))) {
       auto *ArgTy = Arg->getType()->getPointerElementType();
       auto &DL = CGM.getDataLayout();
       TyWidth = CharUnits::fromQuantity(DL.getTypeStoreSize(ArgTy));
