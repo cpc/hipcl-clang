@@ -45,6 +45,14 @@ private:
                                        llvm::StringRef SubArchName,
                                        llvm::StringRef OutputFilePrefix) const;
 
+  /// \return hipdynmem output file name.
+  const char *constructShMemCommand(Compilation &C, const JobAction &JA,
+                                           const InputInfoList &Inputs,
+                                           const llvm::opt::ArgList &Args,
+                                           llvm::StringRef SubArchName,
+                                           llvm::StringRef OutputFilePrefix,
+                                           const char *InputFileName) const;
+
   /// \return opt output file name.
   const char *constructOptCommand(Compilation &C, const JobAction &JA,
                                   const InputInfoList &Inputs,
@@ -54,16 +62,12 @@ private:
                                   const char *InputFileName) const;
 
   /// \return llc output file name.
-  const char *constructLlcCommand(Compilation &C, const JobAction &JA,
+  const char *constructLLVMSpirCommand(Compilation &C, const JobAction &JA,
                                   const InputInfo &Output,
                                   const InputInfoList &Inputs,
                                   const llvm::opt::ArgList &Args,
                                   const char *InputFileName) const;
 
-  void constructLldCommand(Compilation &C, const JobAction &JA,
-                           const InputInfoList &Inputs, const InputInfo &Output,
-                           const llvm::opt::ArgList &Args,
-                           const char *InputFileName) const;
 };
 
 } // end namespace AMDGCN

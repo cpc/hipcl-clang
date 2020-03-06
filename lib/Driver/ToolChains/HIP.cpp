@@ -93,6 +93,41 @@ const char *AMDGCN::Linker::constructLLVMLinkCommand(
   return OutputFileName;
 }
 
+const char *AMDGCN::Linker::constructShMemCommand(
+                                   Compilation &C, const JobAction &JA,
+                                   const InputInfoList &Inputs,
+                                   const ArgList &Args,
+                                   llvm::StringRef SubArchName,
+                                   llvm::StringRef OutputFilePrefix,
+                                   const char *InputFileName) const {
+  // Construct command for hip dynamic mem pass
+  ArgStringList OptArgs;
+  OptArgs.push_back(InputFileName);
+  OptArgs.push_back("-mtriple=spir64-unknown-unknown");
+  OptArgs.push_back("-o");
+  std::string TmpFileName = C.getDriver().GetTemporaryPath(
+      OutputFilePrefix.str() + "-shmem", "bc");
+  const char *OutputFileName =
+      C.addTempFile(C.getArgs().MakeArgString(TmpFileName));
+  OptArgs.push_back(OutputFileName);
+
+  std::vector<std::string> Paths = Args.getAllArgValues(options::OPT_hip_llvm_pass_path_EQ);
+  if (Paths.size() == 1) {
+  Twine HipLLVMPassPath(Paths[0]);
+  Twine HipLLVMPassLib = HipLLVMPassPath.concat(Twine("/libLLVMHipDynMem.so"));
+  OptArgs.push_back("-load");
+  OptArgs.push_back(Args.MakeArgString(HipLLVMPassLib));
+  OptArgs.push_back("-hip-dyn-mem");
+  }
+
+  SmallString<128> OptPath(C.getDriver().Dir);
+  llvm::sys::path::append(OptPath, "opt");
+  const char *OptExec = Args.MakeArgString(OptPath);
+  C.addCommand(llvm::make_unique<Command>(JA, *this, OptExec, OptArgs, Inputs));
+  return OutputFileName;
+}
+
+
 const char *AMDGCN::Linker::constructOptCommand(
                                    Compilation &C, const JobAction &JA,
                                    const InputInfoList &Inputs,
@@ -132,15 +167,6 @@ const char *AMDGCN::Linker::constructOptCommand(
       C.addTempFile(C.getArgs().MakeArgString(TmpFileName));
   OptArgs.push_back(OutputFileName);
 
-  std::vector<std::string> Paths = Args.getAllArgValues(options::OPT_hip_llvm_pass_path_EQ);
-  if (Paths.size() == 1) {
-  Twine HipLLVMPassPath(Paths[0]);
-  Twine HipLLVMPassLib = HipLLVMPassPath.concat(Twine("/libLLVMHipDynMem.so"));
-  OptArgs.push_back("-load");
-  OptArgs.push_back(Args.MakeArgString(HipLLVMPassLib));
-  OptArgs.push_back("-hip-dyn-mem");
-  }
-
   SmallString<128> OptPath(C.getDriver().Dir);
   llvm::sys::path::append(OptPath, "opt");
   const char *OptExec = Args.MakeArgString(OptPath);
@@ -148,7 +174,7 @@ const char *AMDGCN::Linker::constructOptCommand(
   return OutputFileName;
 }
 
-const char *AMDGCN::Linker::constructLlcCommand(
+const char *AMDGCN::Linker::constructLLVMSpirCommand(
     Compilation &C, const JobAction &JA,
     const InputInfo &Output,
     const InputInfoList &Inputs,
@@ -164,22 +190,6 @@ const char *AMDGCN::Linker::constructLlcCommand(
   const char *Llc = Args.MakeArgString(LlvmSpirvPath);
   C.addCommand(llvm::make_unique<Command>(JA, *this, Llc, LlcArgs, Inputs));
   return nullptr;
-}
-
-void AMDGCN::Linker::constructLldCommand(Compilation &C, const JobAction &JA,
-                                          const InputInfoList &Inputs,
-                                          const InputInfo &Output,
-                                          const llvm::opt::ArgList &Args,
-                                          const char *InputFileName) const {
-  // Construct lld command.
-  // The output from ld.lld is an HSA code object file.
-  ArgStringList LldArgs{"-flavor",    "gnu", "--no-undefined",
-                        "-shared",    "-o",  Output.getFilename(),
-                        InputFileName};
-  SmallString<128> LldPath(C.getDriver().Dir);
-  llvm::sys::path::append(LldPath, "lld");
-  const char *Lld = Args.MakeArgString(LldPath);
-  C.addCommand(llvm::make_unique<Command>(JA, *this, Lld, LldArgs, Inputs));
 }
 
 // Construct a clang-offload-bundler command to bundle code objects for
@@ -215,6 +225,7 @@ void AMDGCN::constructHIPFatbinCommand(Compilation &C, const JobAction &JA,
   C.addCommand(llvm::make_unique<Command>(JA, T, Bundler, BundlerArgs, Inputs));
 }
 
+
 // For amdgcn the inputs of the linker job are device bitcode and output is
 // object file. It calls llvm-link, opt, llc, then lld steps.
 void AMDGCN::Linker::ConstructJob(Compilation &C, const JobAction &JA,
@@ -239,10 +250,13 @@ void AMDGCN::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   const char *LLVMLinkCommand =
       constructLLVMLinkCommand(C, JA, Inputs, Args, SubArchName, Prefix);
 
-  const char *OptCommand =
-      constructOptCommand(C, JA, Inputs, Args, SubArchName, Prefix, LLVMLinkCommand);
+  const char *ShMemCommand =
+      constructShMemCommand(C, JA, Inputs, Args, SubArchName, Prefix, LLVMLinkCommand);
 
-  constructLlcCommand(C, JA, Output, Inputs, Args, OptCommand);
+  const char *OptCommand =
+      constructOptCommand(C, JA, Inputs, Args, SubArchName, Prefix, ShMemCommand);
+
+  constructLLVMSpirCommand(C, JA, Output, Inputs, Args, OptCommand);
 }
 
 HIPToolChain::HIPToolChain(const Driver &D, const llvm::Triple &Triple,
