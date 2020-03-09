@@ -81,8 +81,10 @@ const char *AMDGCN::Linker::constructLLVMLinkCommand(
 
   // Add an intermediate output file.
   CmdArgs.push_back("-o");
-  std::string TmpName =
-      C.getDriver().GetTemporaryPath(OutputFilePrefix.str() + "-linked", "bc");
+  std::string TmpName = C.getDriver().isSaveTempsEnabled()
+                            ? OutputFilePrefix.str() + "-linked.bc"
+                            : C.getDriver().GetTemporaryPath(
+                                  OutputFilePrefix.str() + "-linked", "bc");
   const char *OutputFileName =
       C.addTempFile(C.getArgs().MakeArgString(TmpName));
   CmdArgs.push_back(OutputFileName);
@@ -105,8 +107,10 @@ const char *AMDGCN::Linker::constructShMemCommand(
   OptArgs.push_back(InputFileName);
   OptArgs.push_back("-mtriple=spir64-unknown-unknown");
   OptArgs.push_back("-o");
-  std::string TmpFileName = C.getDriver().GetTemporaryPath(
-      OutputFilePrefix.str() + "-shmem", "bc");
+  std::string TmpFileName = C.getDriver().isSaveTempsEnabled()
+                                ? OutputFilePrefix.str() + "-shmem.bc"
+                                : C.getDriver().GetTemporaryPath(
+                                      OutputFilePrefix.str() + "-shmem", "bc");
   const char *OutputFileName =
       C.addTempFile(C.getArgs().MakeArgString(TmpFileName));
   OptArgs.push_back(OutputFileName);
@@ -161,8 +165,11 @@ const char *AMDGCN::Linker::constructOptCommand(
   }
   OptArgs.push_back("-mtriple=spir64-unknown-unknown");
   OptArgs.push_back("-o");
-  std::string TmpFileName = C.getDriver().GetTemporaryPath(
-      OutputFilePrefix.str() + "-optimized", "bc");
+  std::string TmpFileName =
+      C.getDriver().isSaveTempsEnabled()
+          ? OutputFilePrefix.str() + "-optimized.bc"
+          : C.getDriver().GetTemporaryPath(
+                OutputFilePrefix.str() + "-optimized", "bc");
   const char *OutputFileName =
       C.addTempFile(C.getArgs().MakeArgString(TmpFileName));
   OptArgs.push_back(OutputFileName);
@@ -208,7 +215,6 @@ void AMDGCN::constructHIPFatbinCommand(Compilation &C, const JobAction &JA,
   std::string BundlerInputArg = "-inputs=" NULL_FILE;
 
   for (const auto &II : Inputs) {
-    const auto* A = II.getAction();
     BundlerTargetArg = BundlerTargetArg + ",hip-spir64-unknown-unknown-generic";
     BundlerInputArg = BundlerInputArg + "," + II.getFilename();
   }
