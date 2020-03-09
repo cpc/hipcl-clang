@@ -294,6 +294,8 @@ void HIPToolChain::addClangTargetOptions(
 
   CC1Args.push_back("-fcuda-is-device");
 
+  CC1Args.push_back("-fno-rtti");
+
   if (DriverArgs.hasFlag(options::OPT_fcuda_flush_denormals_to_zero,
                          options::OPT_fno_cuda_flush_denormals_to_zero, false))
     CC1Args.push_back("-fcuda-flush-denormals-to-zero");
