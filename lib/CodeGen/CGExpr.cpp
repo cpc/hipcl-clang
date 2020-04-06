@@ -1082,10 +1082,7 @@ Address CodeGenFunction::EmitPointerWithAlignment(const Expr *E,
                                       CodeGenFunction::CFITCK_UnrelatedCast,
                                       CE->getBeginLoc());
         }
-        return CE->getCastKind() != CK_AddressSpaceConversion
-                   ? Builder.CreateBitCast(Addr, ConvertType(E->getType()))
-                   : Builder.CreateAddrSpaceCast(Addr,
-                                                 ConvertType(E->getType()));
+        return Builder.CreatePointerBitCastOrAddrSpaceCast(Addr, ConvertType(E->getType()));
       }
       break;
 
