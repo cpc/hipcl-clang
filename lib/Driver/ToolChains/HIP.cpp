@@ -55,12 +55,38 @@ const char *AMDGCN::Linker::constructLLVMLinkCommand(
     const ArgList &Args, StringRef SubArchName,
     StringRef OutputFilePrefix) const {
   ArgStringList CmdArgs;
-  CmdArgs.push_back("-only-needed");
+  SmallString<128> ExecPath(C.getDriver().Dir);
+  llvm::sys::path::append(ExecPath, "llvm-link");
 
-  // Add the input bc's created by compile step.
-  for (const auto &II : Inputs)
-    CmdArgs.push_back(II.getFilename());
+  // If there are more than one, users bitcode need to be
+  // linked separately, without "-only-needed".
+  if (Inputs.size() > 1) {
+    // Add the input bc's created by compile step.
+    for (const auto &II : Inputs)
+      CmdArgs.push_back(II.getFilename());
 
+    CmdArgs.push_back("-o");
+    // Add an interemediate output file
+    std::string TmpNamePre = C.getDriver().isSaveTempsEnabled()
+            ? OutputFilePrefix.str() + "-prelinked.bc"
+            : C.getDriver().GetTemporaryPath(
+                  OutputFilePrefix.str() + "-prelinked", "bc");
+    const char *OutputFileNamePre =
+        C.addTempFile(C.getArgs().MakeArgString(TmpNamePre));
+    CmdArgs.push_back(OutputFileNamePre);
+
+    const char *ExecPre = Args.MakeArgString(ExecPath);
+    C.addCommand(llvm::make_unique<Command>(JA, *this, ExecPre, CmdArgs, Inputs));
+
+    CmdArgs.clear();
+    CmdArgs.push_back("-only-needed");
+    CmdArgs.push_back(OutputFileNamePre);
+  } else {
+    CmdArgs.push_back("-only-needed");
+    CmdArgs.push_back(Inputs.front().getFilename());
+  }
+
+  // Link device bitcode using "-only-needed"
   ArgStringList LibraryPaths;
 
   // Find in --hip-device-lib-path and HIP_LIBRARY_PATH.
@@ -88,8 +114,6 @@ const char *AMDGCN::Linker::constructLLVMLinkCommand(
   const char *OutputFileName =
       C.addTempFile(C.getArgs().MakeArgString(TmpName));
   CmdArgs.push_back(OutputFileName);
-  SmallString<128> ExecPath(C.getDriver().Dir);
-  llvm::sys::path::append(ExecPath, "llvm-link");
   const char *Exec = Args.MakeArgString(ExecPath);
   C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
   return OutputFileName;

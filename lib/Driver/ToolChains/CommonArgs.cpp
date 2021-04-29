@@ -1382,7 +1382,7 @@ void tools::AddHIPLinkerScript(const ToolChain &TC, Compilation &C,
   // Get the HIP offload tool chain.
   auto *HIPTC = static_cast<const toolchains::CudaToolChain *>(
       C.getSingleOffloadToolChain<Action::OFK_HIP>());
-  assert(HIPTC->getTriple().getArch() == llvm::Triple::amdgcn &&
+  assert(HIPTC->getTriple().getArch() == llvm::Triple::spir64 &&
          "Wrong platform");
   (void)HIPTC;
 
